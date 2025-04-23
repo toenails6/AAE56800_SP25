@@ -6,7 +6,7 @@ from scipy.linalg import cholesky, solve_triangular
 Ts = 0.1  # Time step
 m = 1     # Mass
 time_frames = 60
-capture_radius = 3  # Distance at which pursuer catches evader
+capture_radius = 2.5  # Distance at which pursuer catches evader
 
 # Initialize state
 x_evader = np.zeros((4, time_frames))
@@ -214,18 +214,17 @@ for t in range(time_frames-1):
 # Visualization
 last_t = capture_time if captured else time_frames-1
 
-plt.figure(figsize=(10, 8))
+plt.figure(figsize=(8, 6))
 plt.plot(x_evader[0, :last_t+1], x_evader[1, :last_t+1], 'b-', linewidth=2, label='Evader Path')
 plt.plot(x_pursuer[0, :last_t+1], x_pursuer[1, :last_t+1], 'r-', linewidth=2, label='Pursuer Path')
-plt.plot(x_evader[0, 0], x_evader[1, 0], 'bo', markersize=10, markerfacecolor='b', label='Evader Start')
-plt.plot(x_pursuer[0, 0], x_pursuer[1, 0], 'ro', markersize=10, markerfacecolor='r', label='Pursuer Start')
-plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=10, linewidth=2, label='Evader End')
-plt.plot(x_pursuer[0, last_t], x_pursuer[1, last_t], 'rx', markersize=10, linewidth=2, label='Pursuer End')
+plt.plot(x_evader[0, 0], x_evader[1, 0], 'bo', markersize=8, markerfacecolor='b', label='Evader Start')
+plt.plot(x_pursuer[0, 0], x_pursuer[1, 0], 'ro', markersize=8, markerfacecolor='r', label='Pursuer Start')
+plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=8, linewidth=2, label='Evader End')
+plt.plot(x_pursuer[0, last_t], x_pursuer[1, last_t], 'rx', markersize=8, linewidth=2, label='Pursuer End')
 
 # Draw capture if it happened
 if captured:
-    print('Captured')
-    plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'ko', markersize=15)
+    plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=8)
 
 plt.title('Pursuer-Evader Game')
 plt.xlabel('X Position')
