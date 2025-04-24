@@ -126,3 +126,13 @@ The Co-state dynamics:
     -\lambda_4
 \end{bmatrix}
 ```
+
+Control Optimality: 
+```math
+\frac{\partial H}{\partial u} = \begin{bmatrix}
+    u_{x,c} + \lambda_5 + 2\nu_1 u_{x,c} \\ 
+    u_{y,c} + \lambda_6 + 2\nu_1 u_{y,c} \\ 
+    -u_{x,e} + \lambda_7 + 2\nu_2 u_{x,e} \\ 
+    -u_{y,e} + \lambda_8 + 2\nu_2 u_{y,e}
+\end{bmatrix} = 0
+```
