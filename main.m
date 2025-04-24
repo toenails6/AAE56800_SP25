@@ -45,7 +45,9 @@ for t = 1:time_frames-1
     % measurements 
     z_evader = evader_current(1:2) + 0.2 * randn(2, 1); 
     z_pursuer = pursuer_current(1:2) + 0.2 * randn(2, 1);
-    
+    x_pursuer = ekf(x_pursuer, z_pursuer, P, Qk, Rk);
+    x_evader = ekf(x_evader, z_evader, P, Qk, Rk);
+
     % Update evader state using fixed acceleration
     u_evader = a_evader';
     x_evader(:, t+1) = A * evader_current + B * u_evader;

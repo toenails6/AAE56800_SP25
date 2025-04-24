@@ -11,10 +11,11 @@ capture_radius = 2.5  # Distance at which pursuer catches evader
 # Initialize state
 x_evader = np.zeros((4, time_frames))
 x_pursuer = np.zeros((4, time_frames))
-x_evader[:, 0] = np.array([10, 20, 3, 0])  # Initial state [x, y, vx, vy]
-x_pursuer[:, 0] = np.array([50, 50, -3, -3])
+x_evader[:, 0] = np.array([10, 30, 3, 0])  # Initial state [x, y, vx, vy]
+x_pursuer[:, 0] = np.array([30, 40, -3, -3])
 
 a_evader = np.array([0, -5])  # Fixed acceleration for evader
+a_pursuer = np.zeros(2)  # Initialize pursuer's acceleration
 
 # System dynamics matrices
 A = np.array([
@@ -166,17 +167,17 @@ for t in range(time_frames-1):
     # Measurements 
     z_evader = evader_current[0:2] + 0.2 * np.random.randn(2)
     z_pursuer = pursuer_current[0:2] + 0.2 * np.random.randn(2)
-    
+    x_est_evader = ekf_func(z_evader, x_evader[:, t], P, Qk, Rk, a_evader[0], a_evader[1], Ts)[0]
+    x_est_pursuer = ekf_func(z_pursuer, x_pursuer[:, t], P, Qk, Rk, a_pursuer[0], a_pursuer[1], Ts)[0]
+
     # Update evader state using fixed acceleration
     u_evader = a_evader
-    x_evader[:, t+1] = A @ evader_current + B @ u_evader
+    x_evader[:, t+1] = A @ x_est_evader + B @ u_evader
     
     # Estimate evader's future trajectory for pursuer planning
     evader_pred = x_evader[:, t+1]
     evader_future = np.zeros((4, N))
     evader_future[:, 0] = evader_pred
-    
-    # Predict evader's future positions based on constant acceleration
     for i in range(1, N):
         evader_future[:, i] = A @ evader_future[:, i-1] + B @ u_evader
     
@@ -186,22 +187,19 @@ for t in range(time_frames-1):
     # Check if capture is possible within prediction horizon
     capture_possible = False
     for step in range(N):
-        distance = np.linalg.norm(evader_future[0:2, step] - pursuer_current[0:2])
+        distance = np.linalg.norm(evader_future[0:2, step] - x_est_pursuer[0:2])
         time_to_reach = (step + 1) * Ts
         if distance / time_to_reach < 10:  # If pursuer can reach evader position
             optimal_target = evader_future[:, step]
             capture_possible = True
             break
-    
-    # If capture doesn't seem possible within horizon, aim for final predicted position
+
     if not capture_possible:
         optimal_target = evader_future[:, N-1]
     
     # Use MPC to compute optimal control for pursuer
-    u_pursuer, x_pred = mpc(pursuer_current, optimal_target, N, A, B, Q, R, E, W)
-    
-    # Update pursuer state
-    x_pursuer[:, t+1] = A @ pursuer_current + B @ u_pursuer
+    u_pursuer, x_pred = mpc(x_est_pursuer, optimal_target, N, A, B, Q, R, E, W)
+    x_pursuer[:, t+1] = A @ x_est_pursuer + B @ u_pursuer
     
     # Check for capture
     distance = np.linalg.norm(x_evader[0:2, t+1] - x_pursuer[0:2, t+1])
@@ -222,6 +220,7 @@ plt.plot(x_pursuer[0, 0], x_pursuer[1, 0], 'ro', markersize=8, markerfacecolor='
 plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=8, linewidth=2, label='Evader End')
 plt.plot(x_pursuer[0, last_t], x_pursuer[1, last_t], 'rx', markersize=8, linewidth=2, label='Pursuer End')
 
+
 # Draw capture if it happened
 if captured:
     plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=8)
@@ -234,3 +233,4 @@ plt.grid(True)
 plt.axis('equal')
 plt.show()
 plt.savefig('pursuer_evader_game.jpg')
+
