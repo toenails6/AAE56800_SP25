@@ -24,18 +24,6 @@ A = \begin{bmatrix}
     0 & 0 
 \end{bmatrix}
 ```
-<!-- ```math
-A = \begin{bmatrix}
-    0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 \\
-    0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 \\
-    0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 \\
-    0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
-\end{bmatrix}
-``` -->
 ```math
 x = \begin{bmatrix}
     x_c & y_c & x_e & y_e & v_{x,c} & v_{y,c} & v_{x,e} & v_{y,e}
@@ -46,47 +34,36 @@ B = \begin{bmatrix}
     0 \\ I_4
 \end{bmatrix}
 ```
-<!-- ```math
-B = \begin{bmatrix}
-    0 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 \\
-    0 & 0 & 0 & 0 \\
-    1 & 0 & 0 & 0 \\
-    0 & 1 & 0 & 0 \\
-    0 & 0 & 1 & 0 \\
-    0 & 0 & 0 & 1
-\end{bmatrix}
-``` -->
 ```math
 u = \begin{bmatrix}
     u_{x,c} & u_{y,c} & u_{x,e} & u_{y,e}
 \end{bmatrix}^T
 ```
 
-Optimal Control Problem Formulation: 
+Zero-Sum Differential Optimal Control Problem Formulation: 
 ```math
 \begin{aligned}
-    \min_{u} \quad & 
+    \arg \quad & 
     J = \phi(x(t_f)) + 
     \int_{t_0}^{t_f}L(x(t_f), u(t))\cdot dt \\ 
     \textrm{where} \quad & 
     \phi(x(t_f)) = \frac{1}{2}[(x_c(t_f)-x_e(t_f))^2+(y_c(t_f)-y_e(t_f))^2] \\ &
-    L(u(t)) = \frac{1}{2}(u_{x,c}^2+u_{y,c}^2-u_{x,e}^2-u_{y,e}^2) \\
+    L(u(t)) = \frac{1}{2}(u_{x,c}^2+u_{y,c}^2+u_{x,e}^2+u_{y,e}^2) \\
     \textrm{s.t.} \quad & 
     \dot{x} = Ax+Bu \\ & 
     x_l \leq x_c \leq x_u \\ &
     y_l \leq y_c \leq y_u \\ &
     x_l \leq x_e \leq x_u \\ &
     y_l \leq y_e \leq y_u \\ &
-    u_{x,c}^2 + u_{y,c}^2 \leq V^2 \\ & 
-    u_{x,e}^2 + u_{y,e}^2 \leq V^2
+    y_{x,c}^2 + y_{y,c}^2 \leq V^2 \\ & 
+    y_{x,e}^2 + y_{y,e}^2 \leq V^2 \\ &
+    u_l \leq u \leq u_u
 \end{aligned}
 ```
 
 The Hamiltonian is then:
 ```math
-H = L(u(t)) + \lambda^T(Ax+Bu) + \mu^TC + \nu^TS
+H = L(u(t)) + \lambda^T(Ax+Bu) + \mu^TC + \nu^TS + \alpha^TU
 ```
 where: 
 ```math
@@ -103,8 +80,20 @@ C = \begin{bmatrix}
 ```
 ```math
 S = \begin{bmatrix}
-    u_{x,c}^2 + u_{y,c}^2 - V^2 \\ 
-    u_{x,e}^2 + u_{y,e}^2 - V^2
+    y_{x,c}^2 + u_{y,c}^2 - V^2 \\ 
+    y_{x,e}^2 + u_{y,e}^2 - V^2
+\end{bmatrix}
+```
+```math
+U\begin{bmatrix}
+    u_l - u_{x,c}(t) \\ 
+    u_{x,c}(t) - u_u \\ 
+    u_l - u_{y,c}(t) \\ 
+    u_{y,c}(t) - u_u \\ 
+    u_l - u_{x,e}(t) \\ 
+    u_{x,e}(t) - u_u \\ 
+    u_l - u_{y,e}(t) \\ 
+    u_{y,e}(t) - u_u
 \end{bmatrix}
 ```
 
