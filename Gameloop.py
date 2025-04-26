@@ -15,12 +15,11 @@ N = 7
 # Initialize state
 x_evader = np.zeros((4, time_frames))
 x_pursuer = np.zeros((4, time_frames))
-x_evader[:, 0] = np.array([-10, 20, 3, 0])  # Initial state [x, y, vx, vy]
-x_pursuer[:, 0] = np.array([30, 20, -3, 0])
+x_evader[:, 0] = np.array([-10, 0, -3, 0])  # Initial state [x, y, vx, vy]
+x_pursuer[:, 0] = np.array([0, 0, -3, 0])
 
-u_evader = np.array([0, -5])  # Fixed acceleration for evader
+u_evader = np.zeros(2)  # Initialize evader's acceleration
 u_pursuer = np.zeros(2)  # Initialize pursuer's acceleration
-
 
 # System dynamics matrices
 A = np.array([
@@ -39,8 +38,10 @@ Q = np.diag([20, 20, 1, 1])
 R = np.diag([1, 1])
 
 # Constraint matrices
-E = np.vstack([np.eye(2*N), -np.eye(2*N)])
-W = np.ones(4*N) * 10
+E_e = np.vstack([np.eye(2*N), -np.eye(2*N)])
+W_e = np.ones(4*N) * 10
+E_p = np.vstack([np.eye(2*N), -np.eye(2*N)])
+W_p = np.ones(4*N) * 18
 
 # EKF parameters
 P = np.eye(4)
@@ -130,10 +131,57 @@ def ekf_func(z_k, x_kminus, P, Qk, Rk, acc_x_k, acc_y_k, dt_k):
     
     return x_kplus_hat, P
 
+def compute_future_trajectories(x_evader_current, x_pursuer_current, u_evader, u_pursuer, N, A, B):
+    """
+    Compute future trajectories for the evader and pursuer given current states and inputs
+    """
+    x_future_evader = np.zeros((4, N+1))
+    x_future_pursuer = np.zeros((4, N+1))
+    
+    x_future_evader[:, 0] = x_evader_current
+    x_future_pursuer[:, 0] = x_pursuer_current
+    
+    for i in range(N):
+        x_future_evader[:, i+1] = A @ x_future_evader[:, i] + B @ u_evader
+        x_future_pursuer[:, i+1] = A @ x_future_pursuer[:, i] + B @ u_pursuer
+    
+    return x_future_evader, x_future_pursuer
+
+def compute_optimal_targets(x_evader_current, x_pursuer_current, N, A, B):
+
+    # For evader: compute optimal target that maximizes distance from pursuer
+    # Compute a safe direction away from pursuer
+    direction = x_evader_current[0:2] - x_pursuer_current[0:2]
+    norm = np.linalg.norm(direction)
+    if norm > 0:
+        direction = direction / norm  # compute cos, sin
+    else:
+        direction = np.array([1, 0])  # Default direction if same position
+    
+    # Calculate target position
+    target_x = x_evader_current[0] + direction[0] * 20  # Look ahead
+    target_y = x_evader_current[1] + direction[1] * 20
+    
+    # Keep current velocities for evader
+    optimal_target_evader = np.array([target_x, target_y, x_evader_current[2], x_evader_current[3]])
+    
+    # For pursuer: compute optimal target that minimizes distance to evader
+    # Predict evader's future position for interception
+    predicted_evader_pos = x_evader_current[0:2] + x_evader_current[2:4] * N * Ts
+    
+    # Set pursuer's target to intercept the evader's predicted position
+    optimal_target_pursuer = np.array([
+        predicted_evader_pos[0], 
+        predicted_evader_pos[1], 
+        x_evader_current[2],  # Match evader's velocity for interception
+        x_evader_current[3]
+    ])
+
+    return optimal_target_evader, optimal_target_pursuer
+
 # Game loop
 captured = False
 capture_time = None
-capture_possible = False
 escaped = False
 escape_time = None
 
@@ -145,45 +193,33 @@ for t in range(time_frames-1):
     # Measurements 
     z_evader = evader_current[0:2] + 0.2 * np.random.randn(2)
     z_pursuer = pursuer_current[0:2] + 0.2 * np.random.randn(2)
-    x_est_evader = ekf_func(z_evader, x_evader[:, t], P, Qk, Rk, u_evader[0], u_evader[1], Ts)[0]
-    x_est_pursuer = ekf_func(z_pursuer, x_pursuer[:, t], P, Qk, Rk, u_pursuer[0], u_pursuer[1], Ts)[0]
-    x_pursuer[:, t+1] = A @ x_est_pursuer + B @ u_pursuer
+    
+    # Estimate states using EKF
+    x_est_evader, P_evader = ekf_func(z_evader, x_evader[:, t], P, Qk, Rk, u_evader[0], u_evader[1], Ts)
+    x_est_pursuer, P_pursuer = ekf_func(z_pursuer, x_pursuer[:, t], P, Qk, Rk, u_pursuer[0], u_pursuer[1], Ts)
+    
+    # Compute optimal targets for zero-sum game
+    optimal_target_evader, optimal_target_pursuer = compute_optimal_targets(x_est_evader, x_est_pursuer, N, A, B)
+    
+    # Compute optimal control for evader and pursuer
+    u_evader, x_future_evader = mpc(x_est_evader, optimal_target_evader, N, A, B, Q, R, E_e, W_e)
+    u_pursuer, x_future_pursuer = mpc(x_est_pursuer, optimal_target_pursuer, N, A, B, Q, R, E_p, W_p)
+    
+    # Update states
     x_evader[:, t+1] = A @ x_est_evader + B @ u_evader
-
-    # Evader's future trajectory
-    x_future_evader = np.zeros((4, N))
-    x_future_evader[:, 0] = x_evader[:, t+1]
-    x_future_pursuer = np.zeros((4, N))
-    x_future_pursuer[:, 0] = x_pursuer[:, t+1]
-
-    for i in range(1, N):
-        x_future_evader[:, i] = A @ x_future_evader[:, i-1] + B @ u_evader
-        x_future_pursuer[:, i] = A @ x_future_pursuer[:, i-1] + B @ u_pursuer
-
-    # Optimal interception point for pursuer
-    optimal_target_pursuer = x_est_evader
-
-    scan_radius_pursuer = np.linalg.norm(x_future_pursuer[0:2, -1] - x_est_pursuer[0:2])
-    capture_distance_future = np.linalg.norm(x_future_evader[0:2, -1] - x_est_pursuer[0:2])
-    if capture_distance_future <= scan_radius_pursuer:  # If pursuer can reach evader position
-        optimal_target_pursuer = x_future_evader[:, -1]  
-        capture_possible = True
-        print("Capture possible at step", t)
-
-    # Compute optimal control for pursuer
-    u_pursuer, x_pursuer = mpc(x_est_pursuer, optimal_target_pursuer, N, A, B, Q, R, E, W)
-
+    x_pursuer[:, t+1] = A @ x_est_pursuer + B @ u_pursuer
+    
     # Check for capture
-    capture_distance = np.linalg.norm(x_evader[0:2, t] - x_pursuer[0:2, t])
+    capture_distance = np.linalg.norm(x_evader[0:2, t+1] - x_pursuer[0:2, t+1])
     if capture_distance < capture_radius:
-        print(f'Evader captured at time step {t}!')
+        print(f'Evader captured at time step {t+1}!')
         captured = True
-        capture_time = t
+        capture_time = t+1
         break
-
-    # check for evader out of fence
-    if not (-fence_width/2 <= x_evader[0, t] <= fence_width/2 and -fence_height/2 <= x_evader[1, t] <= fence_height/2):
-        print(f'Evader escaped at time step {t}!')
+    
+    # Check for evader out of fence
+    if not (-fence_width/2 <= x_evader[0, t+1] <= fence_width/2 and -fence_height/2 <= x_evader[1, t+1] <= fence_height/2):
+        print(f'Evader escaped at time step {t+1}!')
         escaped = True
         escape_time = t+1
         break
@@ -198,8 +234,8 @@ else:
     last_t = time_frames-1
 
 plt.figure(figsize=(8, 6))
-plt.plot(x_evader[0, :last_t+1], x_evader[1, :last_t+1], 'bp-', linewidth=1, label='Evader Path')
-plt.plot(x_pursuer[0, :last_t+1], x_pursuer[1, :last_t+1], 'rp-', linewidth=1, label='Pursuer Path')
+plt.plot(x_evader[0, :last_t+1], x_evader[1, :last_t+1], 'b-', linewidth=1, label='Evader Path')
+plt.plot(x_pursuer[0, :last_t+1], x_pursuer[1, :last_t+1], 'r-', linewidth=1, label='Pursuer Path')
 plt.plot(x_evader[0, 0], x_evader[1, 0], 'bo', markersize=8, markerfacecolor='b', label='Evader Start')
 plt.plot(x_pursuer[0, 0], x_pursuer[1, 0], 'ro', markersize=8, markerfacecolor='r', label='Pursuer Start')
 plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=8, linewidth=2, label='Evader End')
@@ -210,16 +246,21 @@ fence_x = [-fence_width/2, fence_width/2, fence_width/2, -fence_width/2, -fence_
 fence_y = [-fence_height/2, -fence_height/2, fence_height/2, fence_height/2, -fence_height/2]
 plt.plot(fence_x, fence_y, 'g--', linewidth=2, label='Fence')
 
+# Draw capture radius if it happened
+if captured:
+    circle = plt.Circle((x_pursuer[0, last_t], x_pursuer[1, last_t]), capture_radius, color='r', fill=False, linestyle='--', alpha=0.5)
+    plt.gca().add_patch(circle)
+    plt.text(x_pursuer[0, last_t], x_pursuer[1, last_t]+3, f'Captured at t={last_t}', horizontalalignment='center')
 
-# Draw capture if it happened
-if captured or escaped:
-    plt.plot(x_evader[0, last_t], x_evader[1, last_t], 'bx', markersize=8)
+# Mark escape point if it happened
+if escaped:
+    plt.text(x_evader[0, last_t], x_evader[1, last_t]+3, f'Escaped at t={last_t}', horizontalalignment='center')
 
-plt.title('Pursuer-Evader Game')
+plt.title('Pursuer-Evader Game with Zero-Sum Game Approach')
 plt.xlabel('X Position')
 plt.ylabel('Y Position')
 plt.legend()
 plt.grid(True)
 plt.axis('equal')
+plt.savefig('pursuer_evader_game.png')
 plt.show()
-plt.savefig('pursuer_evader_game.jpg')
