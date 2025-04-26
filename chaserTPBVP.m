@@ -1,3 +1,9 @@
+% Packaged TPBVP chaser function. 
+% x_c_0 = [x_c; y_c]; Chaser initial states. 
+% x_e_0 = [x_e; y_e; v_x_e; v_y_e]; Evader initial states. 
+% maxSpeed: maximum speed. 
+% areaBnds = [x_l; x_u; y_l; y_u]; 
+% timeStep: time span in the simulation that this function covers. 
 function retval = chaserTPBVP(x_c_0, x_e_0, maxSpeed, areaBnds, timeStep)
     % Evader position estimation. 
     x_e = x_e_0(1:2)+timeStep*x_e_0(3:4); 
