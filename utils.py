@@ -110,8 +110,8 @@ def mpc(x0, target, Ts):
     """
     N = 10
     # Control Input Constraint Matrices
-    E_e = np.vstack([np.eye(2*N), -np.eye(2*N)])
-    W_e = np.ones(4*N) * 5
+    E = np.vstack([np.eye(2*N), -np.eye(2*N)])
+    W = np.ones(4*N) * 5
     # System dynamics matrices
     m = 1     # Mass
     A = np.array([
