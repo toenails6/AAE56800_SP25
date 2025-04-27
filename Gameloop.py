@@ -1,4 +1,6 @@
 import numpy as np
+from numpy.typing import NDArray
+from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
 from scipy.linalg import cholesky, solve_triangular
 from qpsolvers import solve_qp
@@ -15,7 +17,7 @@ N = 7
 # Initialize state
 x_evader = np.zeros((4, time_frames))
 x_pursuer = np.zeros((4, time_frames))
-x_evader[:, 0] = np.array([-10, 0, -3, 0])  # Initial state [x, y, vx, vy]
+x_evader[:, 0] = np.array([-10, 0, 0, 1])  # Initial state [x, y, vx, vy]
 x_pursuer[:, 0] = np.array([0, 0, -3, 0])
 
 u_evader = np.zeros(2)  # Initialize evader's acceleration
@@ -47,6 +49,100 @@ W_p = np.ones(4*N) * 18
 P = np.eye(4)
 Qk = 0.05 * np.eye(4)
 Rk = 0.5 * np.eye(2)
+
+
+def chaserTPBVP(
+        x_c_0: NDArray,
+        x_e_0: NDArray,
+        maxSpeed: float,
+        areaBnds: NDArray,
+        timeStep: float):
+    """
+    Chaser TPBVP function.
+
+    Parameters:
+    x_c_0 : array-like, shape (2,)
+        Chaser initial states [x_c, y_c].
+    x_e_0 : array-like, shape (4,)
+        Evader initial states [x_e, y_e, v_x_e, v_y_e].
+    maxSpeed : float
+        Maximum speed.
+    areaBnds : array-like, shape (4,)
+        Area bounds [x_l, x_u, y_l, y_u].
+    timeStep : float
+        Time span for the simulation.
+
+    Returns:
+    ndarray, shape (2,)
+        Final chaser position [x, y].
+    """
+    # Convert inputs to numpy arrays
+    x_c_0 = np.array(x_c_0)
+    x_e_0 = np.array(x_e_0)
+    areaBnds = np.array(areaBnds)
+
+    # Evader position estimation
+    x_e = x_e_0[:2] + timeStep * x_e_0[2:]
+
+    # TPBVP solver time span
+    tspan = np.linspace(0, timeStep, int(timeStep / 1E-1) + 1)
+
+    # Initial guess
+    guess = np.zeros((4, tspan.size))
+    guess[0] = np.linspace(x_c_0[0], x_e[0], tspan.size)
+    guess[1] = np.linspace(x_c_0[1], x_e[1], tspan.size)
+    guess[2] = 0
+    guess[3] = 0
+
+    def eqns(t_mesh, y_mesh): 
+        # Initialize return value variable. 
+        dydt_mesh = np.zeros_like(y_mesh)
+
+        # Equivalence threshold. 
+        eps = 1e-3  
+
+        # State space system. 
+        A = np.zeros((2, 2))
+        B = np.eye(2)
+
+        # Mesh node loop. 
+        for i in range(len(t_mesh)):
+            # Isolate current mesh node state vector. 
+            y = y_mesh[:, i]
+
+            # Optimal control.
+            u = -np.sign(y[2:4]) * maxSpeed * (np.abs(y[2:4]) > eps)
+            
+            # Position and velocity constraints.
+            if y[0] < areaBnds[0]:
+                u[0] = maxSpeed
+            elif y[0] > areaBnds[1]:
+                u[0] = -maxSpeed
+            if y[1] < areaBnds[2]:
+                u[1] = maxSpeed
+            elif y[1] > areaBnds[3]:
+                u[1] = -maxSpeed
+
+            dydt = np.hstack([A @ y[0:2] + B @ u, np.zeros(2)])
+            
+            dydt_mesh[:, i] = dydt
+
+        # Return derivative mesh. 
+        return dydt_mesh
+
+    def boundaryConditions(ya, yb):
+        """Boundary conditions."""
+        return np.hstack([ya[0:2] - x_c_0,
+                          yb[2:4] - (yb[0:2] - x_e)])
+
+    # Solve BVP
+    sol = solve_bvp(eqns, boundaryConditions, tspan, guess)
+
+    # Extract solution
+    y = sol.y
+    return y[0:2, -1]
+
+
 
 def mpc(x0, target, N, A, B, Q, R, E, W):
     """
@@ -202,9 +298,18 @@ for t in range(time_frames-1):
     optimal_target_evader, optimal_target_pursuer = compute_optimal_targets(x_est_evader, x_est_pursuer, N, A, B)
     
     # Compute optimal control for evader and pursuer
+
+    # Test parameters.
+    x_c_0 = np.array([-1, -1])
+    x_e_0 = np.array([1, 0, 0, 1])
+    maxSpeed = 10
+    areaBnds = np.array([-fence_width/2, fence_width/2, -fence_height/2, fence_height/2])
+    areaBnds[1] = -0.8
+
     u_evader, x_future_evader = mpc(x_est_evader, optimal_target_evader, N, A, B, Q, R, E_e, W_e)
-    u_pursuer, x_future_pursuer = mpc(x_est_pursuer, optimal_target_pursuer, N, A, B, Q, R, E_p, W_p)
-    
+    retval = chaserTPBVP(x_c_0, optimal_target_pursuer, maxSpeed, areaBnds, Ts)
+    # u_pursuer, x_future_pursuer = mpc(x_est_pursuer, optimal_target_pursuer, N, A, B, Q, R, E_p, W_p)
+
     # Update states
     x_evader[:, t+1] = A @ x_est_evader + B @ u_evader
     x_pursuer[:, t+1] = A @ x_est_pursuer + B @ u_pursuer
@@ -264,3 +369,22 @@ plt.grid(True)
 plt.axis('equal')
 plt.savefig('pursuer_evader_game.png')
 plt.show()
+
+plt.figure(figsize=(8, 6))
+
+plt.subplot(2, 1, 1)
+plt.plot(np.arange(0, last_t+1), x_evader[2, :last_t+1], 'b-', label='Evader Vx')
+plt.plot(np.arange(0, last_t+1), x_pursuer[2, :last_t+1], 'r-', label='Pursuer Vx')
+plt.legend()
+plt.grid(True)
+plt.ylabel('X Velocity')
+
+plt.subplot(2, 1, 2)
+plt.plot(np.arange(0, last_t+1), x_evader[3, :last_t+1], 'b-', label='Evader Vy')
+plt.plot(np.arange(0, last_t+1), x_pursuer[3, :last_t+1], 'r-', label='Pursuer Vy')
+plt.legend()
+plt.grid(True)
+plt.xlabel('Time Step')
+plt.ylabel('Y Velocity')
+
+plt.savefig('velocity.jpg')
