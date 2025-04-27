@@ -10,7 +10,7 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
     N = 10
     # Control Input Constraint Matrices
     E = np.vstack([np.eye(2*N), -np.eye(2*N)])
-    W = np.ones(4*N) * 5
+    W = np.ones(4*N) * 10
     # System dynamics matrices
     m = 1     # Mass
     A = np.array([
@@ -34,6 +34,20 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
         direction = direction / norm  # compute cos, sin
 
         # Calculate target position
+        target_x = x_est_evader[0] + direction[0] * 20  # turn_factor = 20  Look ahead
+        target_y = x_est_evader[1] + direction[1] * 20
+
+        if target_x <= -40 or target_x >= 40:
+            if target_y < 30:
+                direction = np.array([0, 1]) 
+            else:
+                direction = np.array([0, -1])
+        elif target_y <= -30 or target_y >= 30:  
+            if target_x < 40:
+                direction = np.array([1, 0])  
+            else:
+                direction =  np.array([-1, 0])
+
         target_x = x_est_evader[0] + direction[0] * 20  # Look ahead
         target_y = x_est_evader[1] + direction[1] * 20
         optimal_target_evader = np.array([target_x, target_y, x_est_evader[2], x_est_evader[3]])
@@ -103,5 +117,29 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
             next_evader_state[2] = maxSpeed
             next_evader_state[3] = maxSpeed
         xMPC[:, i+1] = next_evader_state
+    # Apply area bounds constraints
+    # Position X
+    x_l, x_u, y_l, y_u = areaBnds
+    if xMPC[0, i+1] < x_l:
+        xMPC[0, i+1] = x_l
+        xMPC[2, i+1] = 0  # Zero x-velocity at boundary
+        uMPC[0] = 10
+    elif xMPC[0, i+1] > x_u:
+        xMPC[0, i+1] = x_u
+        xMPC[2, i+1] = 0  # Zero x-velocity at boundary
+        uMPC[0] = -10
+    # Position Y
+    if xMPC[1, i+1] < y_l:
+        xMPC[1, i+1] = y_l
+        xMPC[3, i+1] = 0  # Zero y-velocity at boundary
+        uMPC[1] = 10
+    elif xMPC[1, i+1] > y_u:
+        xMPC[1, i+1] = y_u
+        xMPC[3, i+1] = 0  # Zero y-velocity at boundary
+        uMPC[1] = -10
+    return np.array(xMPC[:, 1][0], xMPC[:, 1][1], 2)
 
-    return xMPC[:, 1][0], xMPC[:, 1][1], 2
+
+if __name__ == "__main__":
+    xMPC = mpc(np.array([1, 1, 1, 1]), np.array([1, 1, 1, 1]), 10, 10, 10)
+    print(xMPC)
