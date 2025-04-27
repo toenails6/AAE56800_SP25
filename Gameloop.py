@@ -2,7 +2,10 @@ import numpy as np
 from utils import chaserTPBVP, mpc, ekf_func, compute_future_trajectories, compute_optimal_targets
 import matplotlib.pyplot as plt
 
+
+#################################
 # Parameters
+#################################
 Ts = 0.1  # Time step
 m = 1     # Mass
 time_frames = 60
@@ -11,31 +14,17 @@ fence_width = 80    # x axis length
 fence_height = 60   # y axis length
 N = 7
 
-# Initialize state
+# Init state
 x_evader = np.zeros((4, time_frames))
 x_pursuer = np.zeros((4, time_frames))
 x_evader[:, 0] = np.array([-10, 10, 0, 0])  # Initial state [x, y, vx, vy]
 x_pursuer[:, 0] = np.array([10, 10, 0, 0])
-
-# velocity Constraint matrices
-E_e = np.vstack([np.eye(2*N), -np.eye(2*N)])
-W_e = np.ones(4*N) * 5
 # E_p = np.vstack([np.eye(2*N), -np.eye(2*N)])
 # W_p = np.ones(4*N) * 18
 maxSpeed = 10
 evader_max_speed = 5
 u_evader = np.zeros(2)  # Initialize evader's acceleration
 u_pursuer = np.zeros(2)  # Initialize pursuer's acceleration
-
-# MPC Parameters
-Q = np.diag([10, 10, 1, 1])
-R = np.diag([1, 1])
-
-# EKF parameters
-P = np.eye(4)
-Qk = 0.05 * np.eye(4)
-Rk = 0.5 * np.eye(2)
-
 
 
 # System dynamics matrices
@@ -51,9 +40,9 @@ B[2, 0] = Ts/m
 B[3, 1] = Ts/m
 
 
-#TPBVP 
-
+###############################
 # Game loop
+###############################
 captured = False
 capture_time = None
 escaped = False
@@ -69,8 +58,8 @@ for t in range(time_frames-1):
     z_pursuer = pursuer_current[0:2] + 0.2 * np.random.randn(2)
     
     # Estimate states using EKF
-    x_est_evader, P_evader = ekf_func(z_evader, x_evader[:, t], P, Qk, Rk, u_evader[0], u_evader[1], Ts)
-    x_est_pursuer, P_pursuer = ekf_func(z_pursuer, x_pursuer[:, t], P, Qk, Rk, u_pursuer[0], u_pursuer[1], Ts)
+    x_est_evader, P_evader = ekf_func(z_evader, x_evader[:, t], u_evader[0], u_evader[1], Ts)
+    x_est_pursuer, P_pursuer = ekf_func(z_pursuer, x_pursuer[:, t], u_pursuer[0], u_pursuer[1], Ts)
     
     # Compute optimal targets for zero-sum game
     optimal_target_evader, optimal_target_pursuer = compute_optimal_targets(x_est_evader, x_est_pursuer, N, A, B, Ts)
@@ -81,7 +70,7 @@ for t in range(time_frames-1):
 
     areaBnds = np.array([-fence_width/2, fence_width/2, -fence_height/2, fence_height/2])
 
-    u_evader, x_future_evader = mpc(x_est_evader, optimal_target_evader, N, A, B, Q, R, E_e, W_e)
+    u_evader, x_future_evader = mpc(x_est_evader, optimal_target_evader, Ts)
     retval = chaserTPBVP(x_est_pursuer[:2], x_est_evader, maxSpeed, areaBnds, Ts)
     # u_pursuer, x_future_pursuer = mpc(x_est_pursuer, optimal_target_pursuer, N, A, B, Q, R, E_p, W_p)
 
@@ -114,7 +103,10 @@ for t in range(time_frames-1):
         escape_time = t+1
         break
 
+
+#############################
 # Visualization
+#############################
 if captured or escaped:
     if escaped:
         last_t = escape_time

@@ -4,6 +4,8 @@ from scipy.linalg import cholesky, solve_triangular
 from qpsolvers import solve_qp
 import numpy as np
 import matplotlib.pyplot as plt
+
+
 def chaserTPBVP(x_c_0, x_e_0, maxSpeed, areaBnds, timeStep):
     """
     Solve the chaser-evader Two-Point Boundary Value Problem
@@ -102,10 +104,28 @@ def chaserTPBVP(x_c_0, x_e_0, maxSpeed, areaBnds, timeStep):
 
 
 
-def mpc(x0, target, N, A, B, Q, R, E, W):
+def mpc(x0, target, Ts):
     """
     Model Predictive Control solver for pursuer trajectory optimization
     """
+    N = 10
+    # Control Input Constraint Matrices
+    E_e = np.vstack([np.eye(2*N), -np.eye(2*N)])
+    W_e = np.ones(4*N) * 5
+    # System dynamics matrices
+    m = 1     # Mass
+    A = np.array([
+        [1, 0, Ts, 0],
+        [0, 1, 0, Ts],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
+
+    B = np.zeros((4, 2))
+    B[2, 0] = Ts/m
+    B[3, 1] = Ts/m
+    Q = np.diag([10, 10, 1, 1])
+    R = np.diag([1, 1])
     # MPC setup
     P = Q  # Terminal cost same as stage cost
     
@@ -157,10 +177,14 @@ def mpc(x0, target, N, A, B, Q, R, E, W):
     
     return uMPC, xMPC
 
-def ekf_func(z_k, x_kminus, P, Qk, Rk, acc_x_k, acc_y_k, dt_k):
+def ekf_func(z_k, x_kminus, acc_x_k, acc_y_k, dt_k):
     """
     Extended Kalman Filter function for state estimation
     """
+    # EKF parameters
+    P = np.eye(4)
+    Qk = 0.05 * np.eye(4)
+    Rk = 0.5 * np.eye(2)
     # Predict
     x_k_pred = x_kminus.copy()
     x_k_pred[0] = x_k_pred[0] + x_k_pred[2]*dt_k + 0.5*acc_x_k*dt_k**2
