@@ -104,4 +104,4 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
             next_evader_state[3] = maxSpeed
         xMPC[:, i+1] = next_evader_state
 
-    return xMPC[:2, 0]
+    return xMPC[:, 1][0], xMPC[:, 1][1], 2
