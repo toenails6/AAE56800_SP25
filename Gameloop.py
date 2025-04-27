@@ -14,11 +14,29 @@ N = 7
 # Initialize state
 x_evader = np.zeros((4, time_frames))
 x_pursuer = np.zeros((4, time_frames))
-x_evader[:, 0] = np.array([-10, 0, 0, 1])  # Initial state [x, y, vx, vy]
-x_pursuer[:, 0] = np.array([0, 0, -3, 0])
+x_evader[:, 0] = np.array([-10, 10, 0, 0])  # Initial state [x, y, vx, vy]
+x_pursuer[:, 0] = np.array([10, 10, 0, 0])
 
+# velocity Constraint matrices
+E_e = np.vstack([np.eye(2*N), -np.eye(2*N)])
+W_e = np.ones(4*N) * 5
+# E_p = np.vstack([np.eye(2*N), -np.eye(2*N)])
+# W_p = np.ones(4*N) * 18
+maxSpeed = 10
+evader_max_speed = 5
 u_evader = np.zeros(2)  # Initialize evader's acceleration
 u_pursuer = np.zeros(2)  # Initialize pursuer's acceleration
+
+# MPC Parameters
+Q = np.diag([10, 10, 1, 1])
+R = np.diag([1, 1])
+
+# EKF parameters
+P = np.eye(4)
+Qk = 0.05 * np.eye(4)
+Rk = 0.5 * np.eye(2)
+
+
 
 # System dynamics matrices
 A = np.array([
@@ -32,21 +50,8 @@ B = np.zeros((4, 2))
 B[2, 0] = Ts/m
 B[3, 1] = Ts/m
 
-# MPC Parameters
-Q = np.diag([20, 20, 1, 1])
-R = np.diag([1, 1])
 
-# Constraint matrices
-E_e = np.vstack([np.eye(2*N), -np.eye(2*N)])
-W_e = np.ones(4*N) * 10
-E_p = np.vstack([np.eye(2*N), -np.eye(2*N)])
-W_p = np.ones(4*N) * 18
-
-# EKF parameters
-P = np.eye(4)
-Qk = 0.05 * np.eye(4)
-Rk = 0.5 * np.eye(2)
-
+#TPBVP 
 
 # Game loop
 captured = False
@@ -73,20 +78,27 @@ for t in range(time_frames-1):
     # Compute optimal control for evader and pursuer
 
     # Test parameters.
-    x_c_0 = np.array([-1, -1])
-    x_e_0 = np.array([1, 0, 0, 1])
-    maxSpeed = 10
+
     areaBnds = np.array([-fence_width/2, fence_width/2, -fence_height/2, fence_height/2])
-    areaBnds[1] = -0.8
 
     u_evader, x_future_evader = mpc(x_est_evader, optimal_target_evader, N, A, B, Q, R, E_e, W_e)
     retval = chaserTPBVP(x_est_pursuer[:2], x_est_evader, maxSpeed, areaBnds, Ts)
     # u_pursuer, x_future_pursuer = mpc(x_est_pursuer, optimal_target_pursuer, N, A, B, Q, R, E_p, W_p)
 
+    
     # Update states
     x_evader[:, t+1] = A @ x_est_evader + B @ u_evader
-    x_pursuer[:, t+1] = A @ x_est_pursuer + B @ u_pursuer
-    
+    x_pursuer[:, t+1] = np.concatenate([retval, (retval - x_est_pursuer[:2])/Ts], axis=0)
+
+    # Apply speed limit to evader
+    next_evader_state = A @ x_est_evader + B @ u_evader
+    evader_speed = np.sqrt(next_evader_state[2]**2 + next_evader_state[3]**2)
+    if evader_speed > evader_max_speed:
+        # Scale the velocity to the maximum speed
+        scale_factor =  evader_max_speed / evader_speed
+        next_evader_state[2] *= scale_factor
+        next_evader_state[3] *= scale_factor
+    x_evader[:, t+1] = next_evader_state
     # Check for capture
     capture_distance = np.linalg.norm(x_evader[0:2, t+1] - x_pursuer[0:2, t+1])
     if capture_distance < capture_radius:
@@ -143,16 +155,18 @@ plt.axis('equal')
 plt.savefig('pursuer_evader_game.png')
 plt.show()
 
+
+# Plot velocity
 plt.figure(figsize=(8, 6))
 
-plt.subplot(2, 1, 1)
+plt.subplot(2, 2, 1)
 plt.plot(np.arange(0, last_t+1), x_evader[2, :last_t+1], 'b-', label='Evader Vx')
 plt.plot(np.arange(0, last_t+1), x_pursuer[2, :last_t+1], 'r-', label='Pursuer Vx')
 plt.legend()
 plt.grid(True)
 plt.ylabel('X Velocity')
 
-plt.subplot(2, 1, 2)
+plt.subplot(2, 2, 3)
 plt.plot(np.arange(0, last_t+1), x_evader[3, :last_t+1], 'b-', label='Evader Vy')
 plt.plot(np.arange(0, last_t+1), x_pursuer[3, :last_t+1], 'r-', label='Pursuer Vy')
 plt.legend()
@@ -160,4 +174,24 @@ plt.grid(True)
 plt.xlabel('Time Step')
 plt.ylabel('Y Velocity')
 
-plt.savefig('velocity.jpg')
+
+
+# plot pos
+plt.subplot(2, 2, 2)
+plt.plot(np.arange(0, last_t+1), x_evader[0, :last_t+1], 'b-', label='Evader X')
+plt.plot(np.arange(0, last_t+1), x_pursuer[0, :last_t+1], 'r-', label='Pursuer X')  
+
+plt.legend()
+plt.grid(True)
+plt.xlabel('Time Step')
+plt.ylabel('X Position')
+
+plt.subplot(2, 2, 4)
+plt.plot(np.arange(0, last_t+1), x_evader[1, :last_t+1], 'b--', label='Evader Y')
+plt.plot(np.arange(0, last_t+1), x_pursuer[1, :last_t+1], 'r--', label='Pursuer Y')
+plt.legend()
+plt.grid(True)
+plt.xlabel('Time Step')
+plt.ylabel('Y Position')
+plt.savefig('position.jpg')
+

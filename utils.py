@@ -4,95 +4,101 @@ from scipy.linalg import cholesky, solve_triangular
 from qpsolvers import solve_qp
 import numpy as np
 import matplotlib.pyplot as plt
-
-def chaserTPBVP(
-        x_c_0: NDArray,
-        x_e_0: NDArray,
-        maxSpeed: float,
-        areaBnds: NDArray,
-        timeStep: float):
+def chaserTPBVP(x_c_0, x_e_0, maxSpeed, areaBnds, timeStep):
     """
-    Chaser TPBVP function.
-
+    Solve the chaser-evader Two-Point Boundary Value Problem
+    
     Parameters:
-    x_c_0 : array-like, shape (2,)
-        Chaser initial states [x_c, y_c].
-    x_e_0 : array-like, shape (4,)
-        Evader initial states [x_e, y_e, v_x_e, v_y_e].
+    -----------
+    x_c_0 : array_like
+        Initial chaser position [x, y]
+    x_e_0 : array_like
+        Initial evader position and velocity [x, y, vx, vy]
     maxSpeed : float
-        Maximum speed.
-    areaBnds : array-like, shape (4,)
-        Area bounds [x_l, x_u, y_l, y_u].
+        Maximum speed
+    areaBnds : array_like
+        Area boundaries [xmin, xmax, ymin, ymax]
     timeStep : float
-        Time span for the simulation.
-
+        Time step for simulation
+        
     Returns:
-    ndarray, shape (2,)
-        Final chaser position [x, y].
+    --------
+    array_like
+        Final chaser position [x, y]
     """
-    # Convert inputs to numpy arrays
-    x_c_0 = np.array(x_c_0)
-    x_e_0 = np.array(x_e_0)
-    areaBnds = np.array(areaBnds)
-
     # Evader position estimation
-    x_e = x_e_0[:2] + timeStep * x_e_0[2:]
-
+    x_e = x_e_0[0:2] + timeStep * x_e_0[2:4]
+    
     # TPBVP solver time span
-    tspan = np.linspace(0, timeStep, int(timeStep / 1E-1) + 1)
-
-    # Initial guess
-    guess = np.zeros((4, tspan.size))
-    guess[0] = np.linspace(x_c_0[0], x_e[0], tspan.size)
-    guess[1] = np.linspace(x_c_0[1], x_e[1], tspan.size)
-    guess[2] = 0
-    guess[3] = 0
-
-    def eqns(t_mesh, y_mesh): 
-        # Initialize return value variable. 
-        dydt_mesh = np.zeros_like(y_mesh)
-
-        # Equivalence threshold. 
-        eps = 1e-3  
-
-        # State space system. 
-        A = np.zeros((2, 2))
-        B = np.eye(2)
-
-        # Mesh node loop. 
-        for i in range(len(t_mesh)):
-            # Isolate current mesh node state vector. 
-            y = y_mesh[:, i]
-            u = -np.sign(y[2:4]) * maxSpeed * (np.abs(y[2:4]) > eps)
+    tspan = np.linspace(0, timeStep, 100)
+    
+    # Initial guess (similar to MATLAB's bvpinit)
+    # Create initial guess mesh
+    guess = np.zeros((4, len(tspan)))
+    for i in range(len(tspan)):
+        guess[0:2, i] = x_e  # Position guess
+        guess[2:4, i] = np.zeros(2)  # Costate guess
+    
+    # Define the differential equations function for scipy's solve_bvp
+    def fun(t, y):
+        # The ODE system for a 4-dimensional state vector
+        dydt = np.zeros_like(y)
+        
+        # Loop through each point in the mesh
+        for i in range(y.shape[1]):
+            # Extract position and costate for this point
+            pos = y[0:2, i]
+            costate = y[2:4, i]
             
-            # Position and velocity constraints.
-            if y[0] < areaBnds[0]:
+            # Equivalence threshold
+            eps = 1e-3
+            
+            # Optimal Control for each dimension
+            u = np.zeros(2)
+            
+            # For x-dimension
+            if np.abs(costate[0]) > eps:
+                u[0] = -np.sign(costate[0]) * maxSpeed
+                
+            # For y-dimension
+            if np.abs(costate[1]) > eps:
+                u[1] = -np.sign(costate[1]) * maxSpeed
+            
+            # Position constraints for x-dimension
+            if pos[0] < areaBnds[0]:
                 u[0] = maxSpeed
-            elif y[0] > areaBnds[1]:
+            elif pos[0] > areaBnds[1]:
                 u[0] = -maxSpeed
-            if y[1] < areaBnds[2]:
+                
+            # Position constraints for y-dimension
+            if pos[1] < areaBnds[2]:
                 u[1] = maxSpeed
-            elif y[1] > areaBnds[3]:
+            elif pos[1] > areaBnds[3]:
                 u[1] = -maxSpeed
-
-            dydt = np.hstack([A @ y[0:2] + B @ u, np.zeros(2)])
             
-            dydt_mesh[:, i] = dydt
-
-        # Return derivative mesh. 
-        return dydt_mesh
-
-    def boundaryConditions(ya, yb):
-        """Boundary conditions."""
-        return np.hstack([ya[0:2] - x_c_0,
-                          yb[2:4] - (yb[0:2] - x_e)])
-
-    # Solve BVP
-    sol = solve_bvp(eqns, boundaryConditions, tspan, guess)
-
-    # Extract solution
-    y = sol.y
-    return y[0:2, -1]
+            # Matrix A (zero matrix in this case)
+            A = np.zeros((2, 2))
+            # Matrix B (identity in this case)
+            B = np.eye(2)
+            
+            # Dynamics: state and costate
+            dydt[0:2, i] = A @ pos + B @ u
+            dydt[2:4, i] = np.zeros(2)
+        
+        return dydt
+    
+    # Define boundary conditions function
+    def bc(ya, yb):
+        return np.concatenate([
+            ya[0:2] - x_c_0,  # Initial position = chaser initial position
+            yb[2:4] - (yb[0:2] - x_e)  # Final costate = final position - evader position
+        ])
+    
+    # Solve TPBVP (equivalent to MATLAB's bvp4c)
+    sol = solve_bvp(fun, bc, tspan, guess)
+    
+    # Return the final chaser position
+    return sol.y[0:2, -1]
 
 
 
@@ -139,9 +145,10 @@ def mpc(x0, target, N, A, B, Q, R, E, W):
     # Active set solver emulation (simplified for Python conversion)
     # Note: Full active set solver implementation would be more complex
     u = solve_qp(L, F @ (x0 - target), E, W, solver="cvxopt")
-    
+
     # Prediction steps
     uMPC = u[:2]  # First control input
+    
     xMPC = np.zeros((4, N+1))
     xMPC[:, 0] = x0
     
@@ -205,7 +212,9 @@ def compute_optimal_targets(x_evader_current, x_pursuer_current, N, A, B, Ts):
         direction = direction / norm  # compute cos, sin
     else:
         direction = np.array([1, 0])  # Default direction if same position
-    
+    # angle_deg = np.degrees(np.arctan2(direction[1], direction[0]))
+    # if angle_deg < 0:
+    #     angle_deg += 360
     # Calculate target position
     target_x = x_evader_current[0] + direction[0] * 20  # Look ahead
     target_y = x_evader_current[1] + direction[1] * 20
