@@ -162,9 +162,53 @@ def mpc(x0, target, Ts):
     Lo = cholesky(L, lower=True)
     Linv = solve_triangular(Lo, np.eye(Lo.shape[0]), lower=True)
     
+     # Add position constraints to existing control constraints
+    # For each prediction step, add constraints to keep position within bounds
+    pos_constraint_count = 4 * N  # x_min, x_max, y_min, y_max for each step
+    x_min, x_max, y_min, y_max = np.array([-40, 40, -30, 30])
+    # Create position constraint matrices
+    E_pos = np.zeros((pos_constraint_count, 2*N))
+    W_pos = np.zeros(pos_constraint_count)
+    
+    for i in range(N):
+        # Calculate state at step i+1 given x_est_evader and u
+        A_i = np.linalg.matrix_power(A, i+1)
+        G_i = G[i*4:(i+1)*4, :]
+        
+        # Constraint for x position: x_min <= x <= x_max
+        # x_min <= Ax + Gu <= x_max
+        # -Gu <= Ax - x_min and Gu <= x_max - Ax
+        
+        # Extract position rows from G_i (first and second rows for x,y)
+        G_i_x = G_i[0, :]  # Influence of u on x position
+        G_i_y = G_i[1, :]  # Influence of u on y position
+        
+        # Predicted state without control
+        x_pred = A_i @ x0
+        
+        # Set up constraints for x_min
+        E_pos[i*4, :] = -G_i_x
+        W_pos[i*4] = x_pred[0] - x_min
+        
+        # Set up constraints for x_max
+        E_pos[i*4+1, :] = G_i_x
+        W_pos[i*4+1] = x_max - x_pred[0]
+        
+        # Set up constraints for y_min
+        E_pos[i*4+2, :] = -G_i_y
+        W_pos[i*4+2] = x_pred[1] - y_min
+        
+        # Set up constraints for y_max
+        E_pos[i*4+3, :] = G_i_y
+        W_pos[i*4+3] = y_max - x_pred[1]
+    
+    # Combine existing control constraints with new position constraints
+    E_combined = np.vstack([E, E_pos])
+    W_combined = np.concatenate([W, W_pos])
+    
     # Active set solver emulation (simplified for Python conversion)
     # Note: Full active set solver implementation would be more complex
-    u = solve_qp(L, F @ (x0 - target), E, W, solver="cvxopt")
+    u = solve_qp(L, F @ (x0 - target), E_combined, W_combined, solver="cvxopt")
 
     # Prediction steps
     uMPC = u[:2]  # First control input
@@ -226,24 +270,17 @@ def compute_future_trajectories(x_evader_current, x_pursuer_current, u_evader, u
     
     return x_future_evader, x_future_pursuer
 
-def compute_optimal_targets(x_evader_current, x_pursuer_current, N, A, B, Ts):
+def compute_optimal_targets(x_evader_current, x_pursuer_current, N, Ts):
 
     # For evader: compute optimal target that maximizes distance from pursuer
     # Compute a safe direction away from pursuer
     direction = x_evader_current[0:2] - x_pursuer_current[0:2]
     norm = np.linalg.norm(direction)
-    if norm > 0:
-        direction = direction / norm  # compute cos, sin
-    else:
-        direction = np.array([1, 0])  # Default direction if same position
-    # angle_deg = np.degrees(np.arctan2(direction[1], direction[0]))
-    # if angle_deg < 0:
-    #     angle_deg += 360
+    direction = direction / norm  # compute cos, sin
+
     # Calculate target position
     target_x = x_evader_current[0] + direction[0] * 20  # Look ahead
     target_y = x_evader_current[1] + direction[1] * 20
-    
-    # Keep current velocities for evader
     optimal_target_evader = np.array([target_x, target_y, x_evader_current[2], x_evader_current[3]])
     
     # For pursuer: compute optimal target that minimizes distance to evader

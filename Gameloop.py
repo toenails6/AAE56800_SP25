@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 #################################
 Ts = 0.1  # Time step
 m = 1     # Mass
-time_frames = 60
+time_frames = 80
 capture_radius = 2  # Distance at which pursuer catches evader
 fence_width = 80    # x axis length
 fence_height = 60   # y axis length
@@ -22,19 +22,16 @@ x_pursuer[:, 0] = np.array([10, 10, 0, 0])
 # E_p = np.vstack([np.eye(2*N), -np.eye(2*N)])
 # W_p = np.ones(4*N) * 18
 maxSpeed = 10
-evader_max_speed = 5
+evader_max_speed = 8
 u_evader = np.zeros(2)  # Initialize evader's acceleration
 u_pursuer = np.zeros(2)  # Initialize pursuer's acceleration
 
-
-# System dynamics matrices
 A = np.array([
     [1, 0, Ts, 0],
     [0, 1, 0, Ts],
     [0, 0, 1, 0],
     [0, 0, 0, 1]
 ])
-
 B = np.zeros((4, 2))
 B[2, 0] = Ts/m
 B[3, 1] = Ts/m
@@ -62,7 +59,7 @@ for t in range(time_frames-1):
     x_est_pursuer, P_pursuer = ekf_func(z_pursuer, x_pursuer[:, t], u_pursuer[0], u_pursuer[1], Ts)
     
     # Compute optimal targets for zero-sum game
-    optimal_target_evader, optimal_target_pursuer = compute_optimal_targets(x_est_evader, x_est_pursuer, N, A, B, Ts)
+    optimal_target_evader, optimal_target_pursuer = compute_optimal_targets(x_est_evader, x_est_pursuer, N, Ts)
     
     # Compute optimal control for evader and pursuer
 
