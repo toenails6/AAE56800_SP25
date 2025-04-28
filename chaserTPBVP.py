@@ -91,8 +91,9 @@ def chaserTPBVP(
     sol = solve_bvp(eqns, boundaryConditions, tspan, guess)
 
     # Extract solution
-    y = sol.y
-    return y[0:2, -1]
+    y = sol.y[0:2, -1]
+    # return y[0:2, -1]
+    return y[0], y[1], 2
 
 
 if __name__ == "__main__":
