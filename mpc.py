@@ -137,7 +137,7 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
         xMPC[1, i+1] = y_u
         xMPC[3, i+1] = 0  # Zero y-velocity at boundary
         uMPC[1] = -10
-    return np.array(xMPC[:, 1][0], xMPC[:, 1][1], 2)
+    return xMPC[:, 1]
 
 
 if __name__ == "__main__":
