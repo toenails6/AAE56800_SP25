@@ -3,14 +3,14 @@ from scipy.linalg import cholesky, solve_triangular
 from qpsolvers import solve_qp
 
 def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
-    
+    x_l, x_u, y_l, y_u = areaBnds   
     """
     Model Predictive Control solver for pursuer trajectory optimization
     """
     N = 10
     # Control Input Constraint Matrices
     E = np.vstack([np.eye(2*N), -np.eye(2*N)])
-    W = np.ones(4*N) * 10
+    W = np.ones(4*N) * 20
     # System dynamics matrices
     m = 1     # Mass
     A = np.array([
@@ -48,8 +48,8 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
             else:
                 direction =  np.array([-1, 0])
 
-        target_x = x_est_evader[0] + direction[0] * 20  # Look ahead
-        target_y = x_est_evader[1] + direction[1] * 20
+        target_x = x_est_evader[0] + direction[0] * 10  # Look ahead
+        target_y = x_est_evader[1] + direction[1] * 10
         optimal_target_evader = np.array([target_x, target_y, x_est_evader[2], x_est_evader[3]])
         
         # For pursuer: compute optimal target that minimizes distance to evader
@@ -65,24 +65,24 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
         ])
         return optimal_target_evader, optimal_target_pursuer
     target, optimal_target_pursuer = compute_optimal_targets(x_est_evader, x_est_pursuer, N, Ts)
-
+    print(target)
     # Building G matrix (equivalent to MATLAB's block formation)
     G = np.zeros((N*4, N*2))
     for i in range(N):
         for j in range(N):
             if i >= j:
                 G[i*4:(i+1)*4, j*2:(j+1)*2] = np.linalg.matrix_power(A, i-j) @ B
-    
+
     # Building block diagonal matrices
     Qbar = np.zeros((N*4, N*4))
     for i in range(N-1):
         Qbar[i*4:(i+1)*4, i*4:(i+1)*4] = Q
     Qbar[(N-1)*4:N*4, (N-1)*4:N*4] = P
-    
+
     Rbar = np.zeros((N*2, N*2))
     for i in range(N):
         Rbar[i*2:(i+1)*2, i*2:(i+1)*2] = R
-    
+
     # Cost function matrices
     L = G.T @ Qbar @ G + Rbar
     epsilon = 1e-6
@@ -111,35 +111,41 @@ def mpc(x_est_evader, x_est_pursuer, maxSpeed, areaBnds, Ts):
     
     ## limit velcoity
     for i in range(N):
-        next_evader_state = A @ x_est_evader + B @ uMPC
-        evader_speed = np.sqrt(next_evader_state[2]**2 + next_evader_state[3]**2)
-        if evader_speed > maxSpeed:
-            next_evader_state[2] = maxSpeed
-            next_evader_state[3] = maxSpeed
-        xMPC[:, i+1] = next_evader_state
-    # Apply area bounds constraints
-    # Position X
-    x_l, x_u, y_l, y_u = areaBnds
-    if xMPC[0, i+1] < x_l:
-        xMPC[0, i+1] = x_l
-        xMPC[2, i+1] = 0  # Zero x-velocity at boundary
-        uMPC[0] = 10
-    elif xMPC[0, i+1] > x_u:
-        xMPC[0, i+1] = x_u
-        xMPC[2, i+1] = 0  # Zero x-velocity at boundary
-        uMPC[0] = -10
-    # Position Y
-    if xMPC[1, i+1] < y_l:
-        xMPC[1, i+1] = y_l
-        xMPC[3, i+1] = 0  # Zero y-velocity at boundary
-        uMPC[1] = 10
-    elif xMPC[1, i+1] > y_u:
-        xMPC[1, i+1] = y_u
-        xMPC[3, i+1] = 0  # Zero y-velocity at boundary
-        uMPC[1] = -10
+        xMPC[:, i+1] = A @ xMPC[:, i] + B @ u[i*2:(i+1)*2]
+        
+        # Apply velocity limiting
+        vel = xMPC[2:4, i+1]
+        speed = np.linalg.norm(vel)
+        if speed > maxSpeed:
+            scale_factor = maxSpeed / speed
+            xMPC[2, i+1] *= scale_factor
+            xMPC[3, i+1] *= scale_factor
+        
+        # Apply area bounds constraints
+        # Position X
+        if xMPC[0, i+1] < x_l:
+            xMPC[0, i+1] = x_l
+            xMPC[2, i+1] = 0  # Zero x-velocity at boundary
+            uMPC[0] = 10
+        elif xMPC[0, i+1] > x_u:
+            xMPC[0, i+1] = x_u
+            xMPC[2, i+1] = 0  # Zero x-velocity at boundary
+            uMPC[0] = -10
+        # Position Y
+        if xMPC[1, i+1] < y_l:
+            xMPC[1, i+1] = y_l
+            xMPC[3, i+1] = 0  # Zero y-velocity at boundary
+            uMPC[1] = 10
+        elif xMPC[1, i+1] > y_u:
+            xMPC[1, i+1] = y_u
+            xMPC[3, i+1] = 0  # Zero y-velocity at boundary
+            uMPC[1] = -10
     return xMPC[:, 1]
 
 
 if __name__ == "__main__":
-    xMPC = mpc(np.array([1, 1, 1, 1]), np.array([1, 1, 1, 1]), 10, 10, 10)
+    fence_width = 80
+    fence_height = 60
+    areaBnds = np.array([-fence_width/2, fence_width/2, -fence_height/2, fence_height/2])
+    xMPC = mpc(np.array([1, 1, 1, 1]), np.array([1, 0, 1, 1]), 10, areaBnds, 10)
     print(xMPC)
