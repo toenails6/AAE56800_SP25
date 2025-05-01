@@ -13,115 +13,115 @@ In example, the chaser is given the evader's initial states at the start of a ne
 For the rest of the duration of this time step, the chaser is not informed of the evader's real-time actual states, and will rely on its own algorithmic predictions of the evader's maneuvers to find the optimal course for capture. 
 The evader's actual states will be revealed to the chaser at the beginning of the next time step, and the cycle continues until either the chaser runs out of time, or the evader is forced within a defined vicinity to the chaser. 
 
-# TPBVP Problem formulation. 
-Chaser-Evader state space: 
-```math
+# Problem formulation
+Chaser state space model: 
+$$
 \dot{x} = Ax+Bu
-```
-```math
+$$
+$$
 A = \begin{bmatrix}
-    0 & I_4 \\
+    0 & 0 \\
     0 & 0 
-\end{bmatrix}
-```
-```math
-x = \begin{bmatrix}
-    x_c & y_c & x_e & y_e & v_{x,c} & v_{y,c} & v_{x,e} & v_{y,e}
-\end{bmatrix}^T
-```
-```math
+\end{bmatrix} \quad
 B = \begin{bmatrix}
-    0 \\ I_4
+    1 & 0 \\ 0 & 1
 \end{bmatrix}
-```
-```math
+$$
+$$
+x = \begin{bmatrix}
+    p_{x,c} & p_{y,c}
+\end{bmatrix}^T \quad
 u = \begin{bmatrix}
-    u_{x,c} & u_{y,c} & u_{x,e} & u_{y,e}
+    u_{x,c} & u_{y,c}
 \end{bmatrix}^T
-```
+$$
 
-Zero-Sum Differential Optimal Control Problem Formulation: 
-```math
+Evader state space model: 
+$$
+\dot{x} = Ax+Bu
+$$
+$$
+A = \begin{bmatrix}
+    0 & I_2 \\
+    0 & 0 
+\end{bmatrix} \quad
+B = \begin{bmatrix}
+    0 \\ I_2
+\end{bmatrix}
+$$
+$$
+x = \begin{bmatrix}
+    p_{x,e} & p_{y,e} & v_{x,e} & v_{y,e}
+\end{bmatrix}^T \quad
+u = \begin{bmatrix}
+    u_{x,e} & u_{y,e}
+\end{bmatrix}^T
+$$
+Let $T_s$ denote the length of a time step. 
+
+Chaser optimal control problem formulation: 
+$$
 \begin{aligned}
-    \arg \quad & 
-    J = \phi(x(t_f)) + 
-    \int_{t_0}^{t_f}L(x(t_f), u(t))\cdot dt \\ 
+    \min_{u} \quad & 
+    J = \phi(x(t_f)) \\ 
     \textrm{where} \quad & 
-    \phi(x(t_f)) = \frac{1}{2}[(x_c(t_f)-x_e(t_f))^2+(y_c(t_f)-y_e(t_f))^2] \\ &
-    L(u(t)) = \frac{1}{2}(u_{x,c}^2+u_{y,c}^2+u_{x,e}^2+u_{y,e}^2) \\
+    \phi(x(t_f)) = \frac{1}{2}[(p_{x,c}(t_f)-p_{x,e}(t_f))^2+(p_{y,c}(t_f)-p_{y,e}(t_f))^2] \\ &
+    p_e(t_f) = p_e(0) + v_e\cdot T_s \\
     \textrm{s.t.} \quad & 
     \dot{x} = Ax+Bu \\ & 
-    x_l \leq x_c \leq x_u \\ &
-    y_l \leq y_c \leq y_u \\ &
-    x_l \leq x_e \leq x_u \\ &
-    y_l \leq y_e \leq y_u \\ &
-    y_{x,c}^2 + y_{y,c}^2 \leq V^2 \\ & 
-    y_{x,e}^2 + y_{y,e}^2 \leq V^2 \\ &
-    u_l \leq u \leq u_u
+    x_l \leq p_x \leq x_u \\ &
+    y_l \leq p_y \leq y_u \\ &
+    -V \leq u \leq V
 \end{aligned}
-```
+$$
 
-The Hamiltonian is then:
-```math
-H = L(u(t)) + \lambda^T(Ax+Bu) + \mu^TC + \nu^TS + \alpha^TU
-```
-where: 
-```math
-C = \begin{bmatrix}
-    x_l - x_c(t) \\ 
-    x_c(t) - x_u \\ 
-    y_l - y_c(t) \\ 
-    y_c(t) - y_u \\ 
-    x_l - x_e(t) \\ 
-    x_e(t) - x_u \\ 
-    y_l - y_e(t) \\ 
-    y_e(t) - y_u
-\end{bmatrix}
-```
-```math
-S = \begin{bmatrix}
-    y_{x,c}^2 + u_{y,c}^2 - V^2 \\ 
-    y_{x,e}^2 + u_{y,e}^2 - V^2
-\end{bmatrix}
-```
-```math
-U\begin{bmatrix}
-    u_l - u_{x,c}(t) \\ 
-    u_{x,c}(t) - u_u \\ 
-    u_l - u_{y,c}(t) \\ 
-    u_{y,c}(t) - u_u \\ 
-    u_l - u_{x,e}(t) \\ 
-    u_{x,e}(t) - u_u \\ 
-    u_l - u_{y,e}(t) \\ 
-    u_{y,e}(t) - u_u
-\end{bmatrix}
-```
+Evader optimal control problem formulation: 
+$$
+\begin{aligned}
+    \max_{u} \quad & 
+    J = \phi(x(t_f)) \\ 
+    \textrm{where} \quad & 
+    \phi(x(t_f)) = \frac{1}{2}[(p_{x,c}(t_f)-p_{x,e}(t_f))^2+(p_{y,c}(t_f)-p_{y,e}(t_f))^2] \\ &
+    p_c(t_f) = p_c(0) + v_c\cdot T_s \\
+    \textrm{s.t.} \quad & 
+    \dot{x} = Ax+Bu \\ & 
+    x_l \leq p_x \leq x_u \\ &
+    y_l \leq p_y \leq y_u \\ &
+    -V \leq v_{x,e} \leq V \\ &
+    -V \leq v_{y,e} \leq V \\ &
+    -G \leq u_{x,e} \leq G \\ &
+    -G \leq u_{y,e} \leq G
+\end{aligned}
+$$
+
+# Chaser Optimal Control derivations: 
+To simplify the constraints so the problem can be converted into a BVP, here we chose a simple positional state space model. 
+The Hamiltonian is then linear with respect to the inputs, and so the problem is in the nature of Bang-Bang control. 
+Since the Bang-Bang control can cover the constraints, and we can let the Hamiltonian simply be:
+$$
+H = \lambda^T(Ax+Bu)
+$$
 
 We thus have the State dynamics: 
-```math
+$$
 \dot{x} = \frac{\partial H}{\partial \lambda} = Ax+Bu
-```
+$$
 
-The Co-state dynamics: 
-```math
+The co-state dynamics: 
+$$
 \dot{\lambda}=-\frac{\partial H}{\partial x} = \begin{bmatrix}
-    \mu_1 - \mu_2 \\ 
-    \mu_3 - \mu_4 \\ 
-    \mu_5 - \mu_6 \\ 
-    \mu_7 - \mu_8 \\ 
-    -\lambda_1 \\ 
-    -\lambda_2 \\ 
-    -\lambda_3 \\ 
-    -\lambda_4
+    0 \\ 
+    0
 \end{bmatrix}
-```
+$$
 
-Control Optimality: 
-```math
+Control optimality: 
+$$
 \frac{\partial H}{\partial u} = \begin{bmatrix}
-    u_{x,c} + \lambda_5 + 2\nu_1 u_{x,c} \\ 
-    u_{y,c} + \lambda_6 + 2\nu_1 u_{y,c} \\ 
-    -u_{x,e} + \lambda_7 + 2\nu_2 u_{x,e} \\ 
-    -u_{y,e} + \lambda_8 + 2\nu_2 u_{y,e}
-\end{bmatrix} = 0
-```
+    \lambda_1 \\ 
+    \lambda_2
+\end{bmatrix} \rightarrow u = \begin{bmatrix}
+    -\text{sign}(\lambda_1)V \\ 
+    -\text{sign}(\lambda_2)V
+\end{bmatrix}
+$$
